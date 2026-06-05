@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>公益服务报表 - 2026-06-05 20:48</title>
+<style>
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 0; padding: 20px; background: #f5f6fa; color: #2d3436; }
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { text-align: center; color: #2d3436; border-bottom: 3px solid #0984e3; padding-bottom: 15px; }
+h2 { color: #0984e3; margin-top: 30px; }
+.stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+.stat-card { background: white; border-radius: 10px; padding: 20px; flex: 1; min-width: 200px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }
+.stat-card .number { font-size: 32px; font-weight: bold; color: #0984e3; }
+.stat-card .label { color: #636e72; margin-top: 5px; }
+.stat-card.warning { border-left: 4px solid #d63031; }
+.stat-card.warning .number { color: #d63031; }
+.stat-card.review { border-left: 4px solid #e17055; }
+.stat-card.review .number { color: #e17055; }
+.stat-card.review-green { border-left: 4px solid #00b894; }
+.stat-card.review-green .number { color: #00b894; }
+.stat-card.review-yellow { border-left: 4px solid #fdcb6e; }
+.stat-card.review-yellow .number { color: #fdcb6e; }
+table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin: 15px 0; }
+th { background: #0984e3; color: white; padding: 12px 15px; text-align: left; }
+td { padding: 10px 15px; border-bottom: 1px solid #dfe6e9; }
+tr:hover { background: #f0f7ff; }
+.thresholds { background: #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0; }
+.thresholds span { margin-right: 25px; font-weight: bold; }
+.review-section { background: #fff5f5; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #e17055; }
+footer { text-align: center; color: #b2bec3; margin-top: 40px; padding: 20px; border-top: 1px solid #dfe6e9; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>公益服务日报表</h1>
+<p style="text-align:center;color:#636e72;">生成时间：2026-06-05 20:48:42</p>
+
+<div class="thresholds">
+<strong>当前预警阈值：</strong>
+<span>服务时长下限：30.0h</span>
+<span>人员负载上限：20.0h</span>
+<span>区域覆盖人数下限：3人</span>
+</div>
+
+<div class="stats">
+<div class="stat-card"><div class="number">267.0</div><div class="label">总服务时长(h)</div></div>
+<div class="stat-card"><div class="number">46</div><div class="label">总记录数</div></div>
+<div class="stat-card"><div class="number">16</div><div class="label">参与人数</div></div>
+<div class="stat-card"><div class="number">5</div><div class="label">覆盖区域</div></div>
+<div class="stat-card warning"><div class="number">7</div><div class="label">预警条数</div></div>
+</div>
+
+<div class="review-section">
+<h2 style="color:#e17055;margin-top:0;">🔄 复核结果统计</h2>
+<div class="stats">
+<div class="stat-card review-yellow"><div class="number">46</div><div class="label">待复核</div></div>
+<div class="stat-card review-green"><div class="number">0</div><div class="label">已复核</div></div>
+<div class="stat-card review"><div class="number">0</div><div class="label">待补充（被驳回）</div></div>
+<div class="stat-card"><div class="number">46</div><div class="label">总计</div></div>
+</div>
+<h3 style="color:#d63031;">驳回原因汇总</h3>
+<table><thead><tr><th>记录ID</th><th>人员姓名</th><th>驳回原因</th><th>日期</th></tr></thead><tbody><tr><td colspan="4" style="text-align:center;color:#636e72;">暂无待补充记录</td></tr></tbody></table>
+</div>
+
+<h2>⚠ 预警清单</h2>
+<table><thead><tr><th>预警类别</th><th>详情</th><th>当前值</th><th>阈值</th></tr></thead><tbody><tr><td>服务时长预警</td><td>当日总服务时长 5.0h 低于阈值 30.0h</td><td>5.0</td><td>30.0</td></tr><tr><td>人员负载预警</td><td>孙丽 总服务时长 28.0h 超过阈值 20.0h</td><td>28.0</td><td>20.0</td></tr><tr><td>人员负载预警</td><td>赵敏 总服务时长 27.0h 超过阈值 20.0h</td><td>27.0</td><td>20.0</td></tr><tr><td>人员负载预警</td><td>张伟 总服务时长 24.5h 超过阈值 20.0h</td><td>24.5</td><td>20.0</td></tr><tr><td>人员负载预警</td><td>周婷 总服务时长 24.0h 超过阈值 20.0h</td><td>24.0</td><td>20.0</td></tr><tr><td>人员负载预警</td><td>马超 总服务时长 22.5h 超过阈值 20.0h</td><td>22.5</td><td>20.0</td></tr><tr><td>区域覆盖预警</td><td>丰台区 覆盖人数 2 低于阈值 3</td><td>2</td><td>3</td></tr></tbody></table>
+
+<h2>📊 每日服务时长汇总</h2>
+<table><thead><tr><th>日期</th><th>总服务时长(h)</th><th>记录数</th><th>平均服务时长(h)</th></tr></thead><tbody><tr><td>2026-06-01</td><td>80.5</td><td>15</td><td>5.4</td></tr><tr><td>2026-06-02</td><td>91.0</td><td>15</td><td>6.1</td></tr><tr><td>2026-06-03</td><td>90.5</td><td>15</td><td>6.0</td></tr><tr><td>2026-06-05</td><td>5.0</td><td>1</td><td>5.0</td></tr></tbody></table>
+
+<h2>👥 人员负载统计</h2>
+<table><thead><tr><th>姓名</th><th>角色</th><th>总服务时长(h)</th><th>活动次数</th><th>平均单次时长(h)</th></tr></thead><tbody><tr><td>孙丽</td><td>执行者</td><td>28.0</td><td>3</td><td>9.3</td></tr><tr><td>赵敏</td><td>执行者</td><td>27.0</td><td>3</td><td>9.0</td></tr><tr><td>张伟</td><td>执行者</td><td>24.5</td><td>3</td><td>8.2</td></tr><tr><td>周婷</td><td>执行者</td><td>24.0</td><td>3</td><td>8.0</td></tr><tr><td>马超</td><td>执行者</td><td>22.5</td><td>3</td><td>7.5</td></tr><tr><td>李娜</td><td>执行者</td><td>20.0</td><td>3</td><td>6.7</td></tr><tr><td>何雪</td><td>执行者</td><td>18.0</td><td>3</td><td>6.0</td></tr><tr><td>黄磊</td><td>执行者</td><td>18.0</td><td>3</td><td>6.0</td></tr><tr><td>高远</td><td>执行者</td><td>16.0</td><td>3</td><td>5.3</td></tr><tr><td>王强</td><td>管理者</td><td>15.0</td><td>3</td><td>5.0</td></tr><tr><td>陈刚</td><td>执行者</td><td>15.0</td><td>3</td><td>5.0</td></tr><tr><td>郑华</td><td>执行者</td><td>13.0</td><td>3</td><td>4.3</td></tr><tr><td>吴涛</td><td>管理者</td><td>9.0</td><td>3</td><td>3.0</td></tr><tr><td>刘芳</td><td>复核者</td><td>7.5</td><td>3</td><td>2.5</td></tr><tr><td>验证员</td><td>执行者</td><td>5.0</td><td>1</td><td>5.0</td></tr><tr><td>林峰</td><td>复核者</td><td>4.5</td><td>3</td><td>1.5</td></tr></tbody></table>
+
+<h2>🗺 区域覆盖统计</h2>
+<table><thead><tr><th>区域</th><th>服务时长(h)</th><th>活动次数</th><th>覆盖人数</th></tr></thead><tbody><tr><td>西城区</td><td>69.0</td><td>9</td><td>3</td></tr><tr><td>朝阳区</td><td>65.0</td><td>13</td><td>5</td></tr><tr><td>丰台区</td><td>50.5</td><td>6</td><td>2</td></tr><tr><td>东城区</td><td>43.0</td><td>9</td><td>3</td></tr><tr><td>海淀区</td><td>39.5</td><td>9</td><td>3</td></tr></tbody></table>
+
+<footer>公益服务报表生成系统 · 自动生成</footer>
+</div>
+</body>
+</html>

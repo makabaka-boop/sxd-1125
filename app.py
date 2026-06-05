@@ -10,10 +10,14 @@ from data_processor import (
     add_service_record,
     update_record_note,
     update_record_status,
+    reject_record,
+    resubmit_record,
     compute_service_hours_summary,
     compute_personnel_load,
     compute_region_coverage,
     compute_warnings,
+    compute_review_stats,
+    compute_rejection_reasons,
 )
 from scheduler import (
     start_scheduler,
@@ -181,7 +185,7 @@ def _build_executor_table_data():
 def _build_reviewer_table_data():
     df = load_all_records()
     pending = df[df["复核状态"] == "待复核"] if not df.empty else pd.DataFrame()
-    approved = df[df["复核状态"].isin(["已复核", "已驳回"])] if not df.empty else pd.DataFrame()
+    approved = df[df["复核状态"].isin(["已复核", "待补充"])] if not df.empty else pd.DataFrame()
 
     pending_data = []
     pending_options = []
@@ -210,6 +214,8 @@ def _build_reviewer_table_data():
                 "区域": r.get("区域", ""),
                 "活动类型": r.get("活动类型", ""),
                 "活动备注": r.get("活动备注", "") or "（空）",
+                "复核状态": r.get("复核状态", ""),
+                "驳回原因": r.get("驳回原因", "") or "",
             })
 
     return pending_data, pending_options, approved_data
@@ -222,12 +228,51 @@ def _render_manager_tab(thresholds):
     region = compute_region_coverage(df)
     warnings = compute_warnings(df, thresholds["hours"], thresholds["load"], thresholds["coverage"])
     warning_count = sum(len(v) for v in warnings.values())
+    review_stats = compute_review_stats(df)
+    rejection_df = compute_rejection_reasons(df)
+
+    rejection_overview = []
+    if not rejection_df.empty:
+        for _, r in rejection_df.head(5).iterrows():
+            rejection_overview.append(html.Div([
+                html.Span(f"🔴 {r['记录ID']} — {r['人员姓名']}：", style={"fontWeight": "600"}),
+                html.Span(r["驳回原因"], style={"color": "#d63031"}),
+            ], style={
+                "padding": "8px 12px",
+                "background": "#fff5f5",
+                "borderLeft": "3px solid #d63031",
+                "borderRadius": "4px",
+                "marginBottom": "6px",
+                "fontSize": "13px",
+            }))
+    else:
+        rejection_overview = [html.Div("✅ 当前无待补充记录", style={"color": "#00b894", "fontWeight": "600", "padding": "10px"})]
 
     return html.Div([
         html.Div([
             html.H2("📊 数据概览", style={"marginTop": "0", "color": "#2d3436"}),
             html.Div(id="stats-overview", children=_build_stats_children(df, warning_count), style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "marginBottom": "20px"}),
         ]),
+
+        html.Div([
+            html.H2("🔄 复核驳回闭环概览", style={"marginTop": "0", "color": "#2d3436"}),
+            html.Div([
+                html.Div([
+                    html.Div(str(review_stats["待补充"]), style={"fontSize": "28px", "fontWeight": "bold", "color": "#e17055"}),
+                    html.Div("待补充记录", style={"color": "#636e72", "marginTop": "5px"}),
+                ], style={**STAT_CARD, "borderLeft": "4px solid #e17055"}),
+                html.Div([
+                    html.Div(str(review_stats["待复核"]), style={"fontSize": "28px", "fontWeight": "bold", "color": "#fdcb6e"}),
+                    html.Div("待复核记录", style={"color": "#636e72", "marginTop": "5px"}),
+                ], style={**STAT_CARD, "borderLeft": "4px solid #fdcb6e"}),
+                html.Div([
+                    html.Div(str(review_stats["已复核"]), style={"fontSize": "28px", "fontWeight": "bold", "color": "#00b894"}),
+                    html.Div("已复核记录", style={"color": "#636e72", "marginTop": "5px"}),
+                ], style={**STAT_CARD, "borderLeft": "4px solid #00b894"}),
+            ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "marginBottom": "15px"}),
+            html.H3("最近驳回记录", style={"color": "#2d3436", "fontSize": "15px", "marginBottom": "10px"}),
+            html.Div(id="rejection-overview", children=rejection_overview),
+        ], style=CARD_STYLE),
 
         html.Div([
             html.H2("🚨 阈值预警设置（拖动滑块调整）", style={"marginTop": "0", "color": "#2d3436"}),
@@ -345,10 +390,95 @@ def _render_manager_tab(thresholds):
     ])
 
 
+def _build_pending_supplement_data():
+    df = load_all_records()
+    pending = df[df["复核状态"] == "待补充"] if not df.empty else pd.DataFrame()
+    table_data = []
+    options = []
+    if not pending.empty:
+        for _, r in pending.iterrows():
+            rid = r.get("记录ID", "")
+            table_data.append({
+                "记录ID": rid,
+                "日期": str(r.get("日期", ""))[:10],
+                "人员姓名": r.get("人员姓名", ""),
+                "服务时长": r.get("服务时长_小时", ""),
+                "区域": r.get("区域", ""),
+                "活动类型": r.get("活动类型", ""),
+                "驳回原因": r.get("驳回原因", "") or "",
+            })
+            options.append({"label": rid, "value": rid})
+    return table_data, options
+
+
 def _render_executor_tab():
     table_data, options = _build_executor_table_data()
+    supplement_data, supplement_options = _build_pending_supplement_data()
 
     return html.Div([
+        html.Div([
+            html.H2("⚠️ 待补充记录（被驳回）", style={"marginTop": "0", "color": "#d63031"}),
+            html.P(f"共 {len(supplement_data)} 条待补充", style={"color": "#636e72", "marginBottom": "10px"}),
+            dash_table.DataTable(
+                id="supplement-table",
+                data=supplement_data,
+                columns=[
+                    {"name": "记录ID", "id": "记录ID"},
+                    {"name": "日期", "id": "日期"},
+                    {"name": "人员姓名", "id": "人员姓名"},
+                    {"name": "服务时长(h)", "id": "服务时长"},
+                    {"name": "区域", "id": "区域"},
+                    {"name": "活动类型", "id": "活动类型"},
+                    {"name": "驳回原因", "id": "驳回原因"},
+                ],
+                page_size=10,
+                style_table={"overflowX": "auto"},
+                style_header={
+                    "background": "#d63031", "color": "white",
+                    "fontWeight": "600", "padding": "10px",
+                },
+                style_cell={
+                    "padding": "8px 12px", "textAlign": "left",
+                    "borderBottom": "1px solid #dfe6e9",
+                    "fontFamily": "-apple-system, 'Microsoft YaHei', sans-serif",
+                    "fontSize": "13px",
+                },
+                style_data_conditional=[
+                    {"if": {"column_id": "驳回原因"}, "color": "#d63031", "fontWeight": "600"},
+                ],
+                row_selectable="single",
+                sort_action="native",
+                filter_action="native",
+            ),
+            html.Div([
+                html.Div([
+                    html.Label("选择待补充记录ID：", style={"fontWeight": "600"}),
+                    dcc.Dropdown(
+                        id="supplement-record-id",
+                        options=supplement_options,
+                        placeholder="从表格选择或手动输入",
+                        style={"width": "300px"},
+                    ),
+                ], style={"marginBottom": "10px"}),
+                html.Div(id="rejection-reason-display", style={"marginBottom": "10px"}),
+                html.Div([
+                    html.Label("补充备注：", style={"fontWeight": "600", "display": "block", "marginBottom": "5px"}),
+                    dcc.Textarea(
+                        id="supplement-note-input",
+                        placeholder="请输入补充备注内容...",
+                        style={"width": "100%", "height": "80px", "padding": "10px", "border": "1px solid #dfe6e9", "borderRadius": "6px", "fontSize": "14px"},
+                    ),
+                ]),
+                html.Button("🔄 补充备注并重新提交复核", id="btn-resubmit", n_clicks=0, style={
+                    "background": "linear-gradient(135deg, #e17055, #d63031)",
+                    "color": "white", "border": "none", "padding": "10px 30px",
+                    "borderRadius": "6px", "cursor": "pointer", "fontWeight": "600",
+                    "marginTop": "10px", "fontSize": "14px",
+                }),
+            ], style={"marginTop": "20px", "background": "#fff5f5", "padding": "20px", "borderRadius": "10px"}),
+            html.Div(id="resubmit-feedback", style={"marginTop": "10px"}),
+        ], style=CARD_STYLE),
+
         html.Div([
             html.H2("✏️ 补充活动备注", style={"marginTop": "0", "color": "#2d3436"}),
             html.P("选择记录并补充活动备注信息", style={"color": "#636e72", "marginBottom": "15px"}),
@@ -457,12 +587,20 @@ def _render_reviewer_tab(thresholds):
                         style={"width": "300px"},
                     ),
                 ], style={"marginBottom": "10px"}),
+                html.Div([
+                    html.Label("驳回原因：", style={"fontWeight": "600", "display": "block", "marginBottom": "5px"}),
+                    dcc.Textarea(
+                        id="reject-reason-input",
+                        placeholder="请输入驳回原因（驳回时必填）...",
+                        style={"width": "100%", "height": "60px", "padding": "10px", "border": "1px solid #dfe6e9", "borderRadius": "6px", "fontSize": "14px"},
+                    ),
+                ], style={"marginBottom": "10px"}),
                 html.Button("✅ 确认复核通过", id="btn-approve", n_clicks=0, style={
                     "background": "#00b894", "color": "white", "border": "none",
                     "padding": "10px 30px", "borderRadius": "6px", "cursor": "pointer",
                     "fontWeight": "600", "fontSize": "14px",
                 }),
-                html.Button("❌ 驳回", id="btn-reject", n_clicks=0, style={
+                html.Button("❌ 驳回（转为待补充）", id="btn-reject", n_clicks=0, style={
                     "background": "#d63031", "color": "white", "border": "none",
                     "padding": "10px 30px", "borderRadius": "6px", "cursor": "pointer",
                     "fontWeight": "600", "fontSize": "14px", "marginLeft": "10px",
@@ -485,11 +623,17 @@ def _render_reviewer_tab(thresholds):
                     {"name": "区域", "id": "区域"},
                     {"name": "活动类型", "id": "活动类型"},
                     {"name": "活动备注", "id": "活动备注"},
+                    {"name": "复核状态", "id": "复核状态"},
+                    {"name": "驳回原因", "id": "驳回原因"},
                 ],
                 page_size=10,
                 style_table={"overflowX": "auto"},
                 style_header={"background": "#00b894", "color": "white", "fontWeight": "600", "padding": "10px"},
                 style_cell={"padding": "8px 12px", "textAlign": "left", "borderBottom": "1px solid #dfe6e9", "fontSize": "13px"},
+                style_data_conditional=[
+                    {"if": {"filter_query": "{复核状态} = 待补充"}, "color": "#d63031", "fontWeight": "600"},
+                    {"if": {"column_id": "驳回原因"}, "color": "#d63031"},
+                ],
                 sort_action="native",
                 filter_action="native",
             ),
@@ -775,11 +919,12 @@ def save_note(n_clicks, record_id, note, data_version):
     ],
     [
         State("review-record-id", "value"),
+        State("reject-reason-input", "value"),
         State("data-version", "data"),
     ],
     prevent_initial_call=True,
 )
-def review_record(approve_clicks, reject_clicks, record_id, data_version):
+def review_record(approve_clicks, reject_clicks, record_id, reject_reason, data_version):
     ctx = callback_context
     if not ctx.triggered:
         return "", no_update
@@ -793,8 +938,12 @@ def review_record(approve_clicks, reject_clicks, record_id, data_version):
         update_record_status(record_id, "已复核")
         return html.Div(f"✅ 记录 {record_id} 已复核通过", style={"color": "#00b894", "fontWeight": "600"}), new_version
     elif button_id == "btn-reject":
-        update_record_status(record_id, "已驳回")
-        return html.Div(f"❌ 记录 {record_id} 已驳回", style={"color": "#d63031", "fontWeight": "600"}), new_version
+        if not reject_reason or not reject_reason.strip():
+            return html.Div("❌ 驳回时必须填写驳回原因", style={"color": "#d63031", "fontWeight": "600"}), no_update
+        success = reject_record(record_id, reject_reason.strip())
+        if success:
+            return html.Div(f"❌ 记录 {record_id} 已驳回，已转为待补充状态", style={"color": "#d63031", "fontWeight": "600"}), new_version
+        return html.Div(f"❌ 未找到记录 {record_id}", style={"color": "#d63031", "fontWeight": "600"}), no_update
     return "", no_update
 
 
@@ -802,13 +951,16 @@ def review_record(approve_clicks, reject_clicks, record_id, data_version):
     [
         Output("records-table", "data", allow_duplicate=True),
         Output("note-record-id", "options", allow_duplicate=True),
+        Output("supplement-table", "data", allow_duplicate=True),
+        Output("supplement-record-id", "options", allow_duplicate=True),
     ],
     Input("data-version", "data"),
     prevent_initial_call=True,
 )
 def refresh_executor_data(data_version):
     table_data, options = _build_executor_table_data()
-    return table_data, options
+    supplement_data, supplement_options = _build_pending_supplement_data()
+    return table_data, options, supplement_data, supplement_options
 
 
 @app.callback(
@@ -938,6 +1090,67 @@ def on_table_select(selected_rows, data):
         if idx < len(data):
             return data[idx].get("记录ID", "")
     return None
+
+
+@app.callback(
+    Output("supplement-record-id", "value"),
+    Input("supplement-table", "selected_rows"),
+    State("supplement-table", "data"),
+)
+def on_supplement_table_select(selected_rows, data):
+    if selected_rows and data:
+        idx = selected_rows[0]
+        if idx < len(data):
+            return data[idx].get("记录ID", "")
+    return None
+
+
+@app.callback(
+    Output("rejection-reason-display", "children"),
+    Input("supplement-record-id", "value"),
+)
+def show_rejection_reason(record_id):
+    if not record_id:
+        return ""
+    df = load_all_records()
+    if df.empty:
+        return ""
+    record = df[df["记录ID"] == record_id]
+    if record.empty:
+        return ""
+    reason = record.iloc[0].get("驳回原因", "") or ""
+    if reason:
+        return html.Div([
+            html.Span("驳回原因：", style={"fontWeight": "600", "color": "#d63031"}),
+            html.Span(reason, style={"color": "#d63031"}),
+        ], style={"padding": "8px 12px", "background": "#fff0f0", "borderRadius": "6px", "fontSize": "14px"})
+    return ""
+
+
+@app.callback(
+    [
+        Output("resubmit-feedback", "children"),
+        Output("data-version", "data", allow_duplicate=True),
+    ],
+    Input("btn-resubmit", "n_clicks"),
+    [
+        State("supplement-record-id", "value"),
+        State("supplement-note-input", "value"),
+        State("data-version", "data"),
+    ],
+    prevent_initial_call=True,
+)
+def resubmit_record_callback(n_clicks, record_id, note, data_version):
+    if n_clicks == 0:
+        return "", no_update
+    if not record_id:
+        return html.Div("❌ 请选择待补充记录", style={"color": "#d63031", "fontWeight": "600"}), no_update
+    if not note or not note.strip():
+        return html.Div("❌ 请填写补充备注内容", style={"color": "#d63031", "fontWeight": "600"}), no_update
+    success = resubmit_record(record_id, note.strip())
+    if success:
+        return html.Div(f"✅ 记录 {record_id} 已补充并重新提交复核！", style={"color": "#00b894", "fontWeight": "600"}), (data_version or 0) + 1
+    return html.Div(f"❌ 未找到记录 {record_id}", style={"color": "#d63031", "fontWeight": "600"}), no_update
 
 
 @app.callback(
