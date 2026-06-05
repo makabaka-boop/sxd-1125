@@ -1,6 +1,6 @@
 import os
 import dash
-from dash import dcc, html, dash_table, Input, Output, State, callback_context
+from dash import dcc, html, dash_table, Input, Output, State, callback_context, no_update
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
@@ -103,6 +103,7 @@ app.layout = html.Div([
     dcc.Store(id="session-data"),
     dcc.Store(id="session-thresholds", data={"hours": 30.0, "load": 20.0, "coverage": 3}),
     dcc.Store(id="session-scheduler-running", data=False),
+    dcc.Store(id="data-version", data=0),
     dcc.Interval(id="scheduler-interval", interval=60000, n_intervals=0, disabled=True),
 
     html.Div(id="toast-container", style={
@@ -126,6 +127,94 @@ def render_tab(tab, thresholds):
     return html.Div()
 
 
+def _build_stats_children(df, warning_count):
+    total_hours = df["服务时长_小时"].sum() if not df.empty else 0
+    total_records = len(df)
+    total_persons = df["人员姓名"].nunique() if not df.empty else 0
+    total_regions = df["区域"].nunique() if not df.empty else 0
+
+    return [
+        html.Div([
+            html.Div(f"{total_hours:.1f}", style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
+            html.Div("总服务时长(h)", style={"color": "#636e72", "marginTop": "5px"}),
+        ], style=STAT_CARD),
+        html.Div([
+            html.Div(str(total_records), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
+            html.Div("总记录数", style={"color": "#636e72", "marginTop": "5px"}),
+        ], style=STAT_CARD),
+        html.Div([
+            html.Div(str(total_persons), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
+            html.Div("参与人数", style={"color": "#636e72", "marginTop": "5px"}),
+        ], style=STAT_CARD),
+        html.Div([
+            html.Div(str(total_regions), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
+            html.Div("覆盖区域", style={"color": "#636e72", "marginTop": "5px"}),
+        ], style=STAT_CARD),
+        html.Div([
+            html.Div(str(warning_count), style={"fontSize": "32px", "fontWeight": "bold", "color": "#d63031" if warning_count > 0 else "#00b894"}),
+            html.Div("预警条数", style={"color": "#636e72", "marginTop": "5px"}),
+        ], style={**STAT_CARD, "borderLeft": "4px solid #d63031" if warning_count > 0 else "4px solid #00b894"}),
+    ]
+
+
+def _build_executor_table_data():
+    df = load_all_records()
+    records = df.to_dict("records") if not df.empty else []
+    table_data = []
+    options = []
+    for r in records:
+        rid = r.get("记录ID", "")
+        note = r.get("活动备注", "") or "（空）"
+        table_data.append({
+            "记录ID": rid,
+            "日期": str(r.get("日期", ""))[:10],
+            "人员姓名": r.get("人员姓名", ""),
+            "服务时长": r.get("服务时长_小时", ""),
+            "区域": r.get("区域", ""),
+            "活动类型": r.get("活动类型", ""),
+            "活动备注": note,
+        })
+        options.append({"label": rid, "value": rid})
+    return table_data, options
+
+
+def _build_reviewer_table_data():
+    df = load_all_records()
+    pending = df[df["复核状态"] == "待复核"] if not df.empty else pd.DataFrame()
+    approved = df[df["复核状态"].isin(["已复核", "已驳回"])] if not df.empty else pd.DataFrame()
+
+    pending_data = []
+    pending_options = []
+    if not pending.empty:
+        for _, r in pending.iterrows():
+            rid = r.get("记录ID", "")
+            pending_data.append({
+                "记录ID": rid,
+                "日期": str(r.get("日期", ""))[:10],
+                "人员姓名": r.get("人员姓名", ""),
+                "服务时长": r.get("服务时长_小时", ""),
+                "区域": r.get("区域", ""),
+                "活动类型": r.get("活动类型", ""),
+                "活动备注": r.get("活动备注", "") or "（空）",
+            })
+            pending_options.append({"label": rid, "value": rid})
+
+    approved_data = []
+    if not approved.empty:
+        for _, r in approved.iterrows():
+            approved_data.append({
+                "记录ID": r.get("记录ID", ""),
+                "日期": str(r.get("日期", ""))[:10],
+                "人员姓名": r.get("人员姓名", ""),
+                "服务时长": r.get("服务时长_小时", ""),
+                "区域": r.get("区域", ""),
+                "活动类型": r.get("活动类型", ""),
+                "活动备注": r.get("活动备注", "") or "（空）",
+            })
+
+    return pending_data, pending_options, approved_data
+
+
 def _render_manager_tab(thresholds):
     df = load_all_records()
     daily = compute_service_hours_summary(df)
@@ -137,28 +226,7 @@ def _render_manager_tab(thresholds):
     return html.Div([
         html.Div([
             html.H2("📊 数据概览", style={"marginTop": "0", "color": "#2d3436"}),
-            html.Div([
-                html.Div([
-                    html.Div(f"{df['服务时长_小时'].sum():.1f}", style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
-                    html.Div("总服务时长(h)", style={"color": "#636e72", "marginTop": "5px"}),
-                ], style=STAT_CARD),
-                html.Div([
-                    html.Div(str(len(df)), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
-                    html.Div("总记录数", style={"color": "#636e72", "marginTop": "5px"}),
-                ], style=STAT_CARD),
-                html.Div([
-                    html.Div(str(df["人员姓名"].nunique()), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
-                    html.Div("参与人数", style={"color": "#636e72", "marginTop": "5px"}),
-                ], style=STAT_CARD),
-                html.Div([
-                    html.Div(str(df["区域"].nunique()), style={"fontSize": "32px", "fontWeight": "bold", "color": "#0984e3"}),
-                    html.Div("覆盖区域", style={"color": "#636e72", "marginTop": "5px"}),
-                ], style=STAT_CARD),
-                html.Div([
-                    html.Div(str(warning_count), style={"fontSize": "32px", "fontWeight": "bold", "color": "#d63031" if warning_count > 0 else "#00b894"}),
-                    html.Div("预警条数", style={"color": "#636e72", "marginTop": "5px"}),
-                ], style={**STAT_CARD, "borderLeft": "4px solid #d63031" if warning_count > 0 else "4px solid #00b894"}),
-            ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "marginBottom": "20px"}),
+            html.Div(id="stats-overview", children=_build_stats_children(df, warning_count), style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "marginBottom": "20px"}),
         ]),
 
         html.Div([
@@ -278,19 +346,7 @@ def _render_manager_tab(thresholds):
 
 
 def _render_executor_tab():
-    df = load_all_records()
-    records = df.to_dict("records") if not df.empty else []
-    table_data = []
-    for r in records:
-        table_data.append({
-            "记录ID": r.get("记录ID", ""),
-            "日期": str(r.get("日期", ""))[:10],
-            "人员姓名": r.get("人员姓名", ""),
-            "服务时长": r.get("服务时长_小时", ""),
-            "区域": r.get("区域", ""),
-            "活动类型": r.get("活动类型", ""),
-            "活动备注": r.get("活动备注", "") or "（空）",
-        })
+    table_data, options = _build_executor_table_data()
 
     return html.Div([
         html.Div([
@@ -332,7 +388,7 @@ def _render_executor_tab():
                     html.Label("选择记录ID：", style={"fontWeight": "600"}),
                     dcc.Dropdown(
                         id="note-record-id",
-                        options=[{"label": r.get("记录ID", ""), "value": r.get("记录ID", "")} for r in records],
+                        options=options,
                         placeholder="从表格选择或手动输入",
                         style={"width": "300px"},
                     ),
@@ -358,35 +414,7 @@ def _render_executor_tab():
 
 
 def _render_reviewer_tab(thresholds):
-    df = load_all_records()
-    pending = df[df["复核状态"] == "待复核"] if not df.empty else pd.DataFrame()
-    approved = df[df["复核状态"] == "已复核"] if not df.empty else pd.DataFrame()
-
-    pending_data = []
-    if not pending.empty:
-        for _, r in pending.iterrows():
-            pending_data.append({
-                "记录ID": r.get("记录ID", ""),
-                "日期": str(r.get("日期", ""))[:10],
-                "人员姓名": r.get("人员姓名", ""),
-                "服务时长": r.get("服务时长_小时", ""),
-                "区域": r.get("区域", ""),
-                "活动类型": r.get("活动类型", ""),
-                "活动备注": r.get("活动备注", "") or "（空）",
-            })
-
-    approved_data = []
-    if not approved.empty:
-        for _, r in approved.iterrows():
-            approved_data.append({
-                "记录ID": r.get("记录ID", ""),
-                "日期": str(r.get("日期", ""))[:10],
-                "人员姓名": r.get("人员姓名", ""),
-                "服务时长": r.get("服务时长_小时", ""),
-                "区域": r.get("区域", ""),
-                "活动类型": r.get("活动类型", ""),
-                "活动备注": r.get("活动备注", "") or "（空）",
-            })
+    pending_data, pending_options, approved_data = _build_reviewer_table_data()
 
     report_files = []
     if os.path.exists(REPORTS_DIR):
@@ -424,7 +452,7 @@ def _render_reviewer_tab(thresholds):
                     html.Label("选择记录ID：", style={"fontWeight": "600"}),
                     dcc.Dropdown(
                         id="review-record-id",
-                        options=[{"label": r["记录ID"], "value": r["记录ID"]} for r in pending_data],
+                        options=pending_options,
                         placeholder="选择待复核记录",
                         style={"width": "300px"},
                     ),
@@ -447,6 +475,7 @@ def _render_reviewer_tab(thresholds):
             html.H2("📋 已复核记录", style={"marginTop": "0", "color": "#2d3436"}),
             html.P(f"共 {len(approved_data)} 条已复核", style={"color": "#636e72", "marginBottom": "10px"}),
             dash_table.DataTable(
+                id="approved-table",
                 data=approved_data,
                 columns=[
                     {"name": "记录ID", "id": "记录ID"},
@@ -638,6 +667,7 @@ def _make_warning_list(warnings):
 @app.callback(
     [
         Output("session-thresholds", "data"),
+        Output("stats-overview", "children"),
         Output("warning-list", "children"),
         Output("chart-daily-hours", "figure"),
         Output("chart-personnel-load", "figure"),
@@ -647,9 +677,10 @@ def _make_warning_list(warnings):
         Input("threshold-hours", "value"),
         Input("threshold-load", "value"),
         Input("threshold-coverage", "value"),
+        Input("data-version", "data"),
     ],
 )
-def update_thresholds(hours, load, coverage):
+def update_thresholds(hours, load, coverage, data_version):
     thresholds = {
         "hours": float(hours) if hours else 30.0,
         "load": float(load) if load else 20.0,
@@ -660,9 +691,11 @@ def update_thresholds(hours, load, coverage):
     personnel = compute_personnel_load(df)
     region = compute_region_coverage(df)
     warnings = compute_warnings(df, thresholds["hours"], thresholds["load"], thresholds["coverage"])
+    warning_count = sum(len(v) for v in warnings.values())
 
     return (
         thresholds,
+        _build_stats_children(df, warning_count),
         _make_warning_list(warnings),
         _make_daily_hours_chart(daily, thresholds["hours"]),
         _make_personnel_load_chart(personnel, thresholds["load"]),
@@ -671,7 +704,10 @@ def update_thresholds(hours, load, coverage):
 
 
 @app.callback(
-    Output("add-record-feedback", "children"),
+    [
+        Output("add-record-feedback", "children"),
+        Output("data-version", "data", allow_duplicate=True),
+    ],
     Input("btn-add-record", "n_clicks"),
     [
         State("input-name", "value"),
@@ -679,13 +715,15 @@ def update_thresholds(hours, load, coverage):
         State("input-hours", "value"),
         State("input-region", "value"),
         State("input-activity", "value"),
+        State("data-version", "data"),
     ],
+    prevent_initial_call=True,
 )
-def add_record(n_clicks, name, role, hours, region, activity):
+def add_record(n_clicks, name, role, hours, region, activity, data_version):
     if n_clicks == 0:
-        return ""
+        return "", no_update
     if not all([name, role, hours, region, activity]):
-        return html.Div("❌ 请填写所有必填字段", style={"color": "#d63031", "fontWeight": "600"})
+        return html.Div("❌ 请填写所有必填字段", style={"color": "#d63031", "fontWeight": "600"}), no_update
     from datetime import datetime as dt
     record = {
         "记录ID": f"REC{dt.now().strftime('%Y%m%d%H%M%S')}",
@@ -699,61 +737,92 @@ def add_record(n_clicks, name, role, hours, region, activity):
         "复核状态": "待复核",
     }
     add_service_record(record)
-    return html.Div("✅ 记录已成功添加！刷新页面查看更新。", style={"color": "#00b894", "fontWeight": "600"})
+    return html.Div("✅ 记录已成功添加！", style={"color": "#00b894", "fontWeight": "600"}), (data_version or 0) + 1
 
 
 @app.callback(
-    Output("save-note-feedback", "children"),
+    [
+        Output("save-note-feedback", "children"),
+        Output("data-version", "data", allow_duplicate=True),
+    ],
     Input("btn-save-note", "n_clicks"),
     [
         State("note-record-id", "value"),
         State("note-input", "value"),
+        State("data-version", "data"),
     ],
+    prevent_initial_call=True,
 )
-def save_note(n_clicks, record_id, note):
+def save_note(n_clicks, record_id, note, data_version):
     if n_clicks == 0:
-        return ""
+        return "", no_update
     if not record_id or not note:
-        return html.Div("❌ 请选择记录并输入备注内容", style={"color": "#d63031", "fontWeight": "600"})
+        return html.Div("❌ 请选择记录并输入备注内容", style={"color": "#d63031", "fontWeight": "600"}), no_update
     success = update_record_note(record_id, note)
     if success:
-        return html.Div(f"✅ 记录 {record_id} 的备注已保存！", style={"color": "#00b894", "fontWeight": "600"})
-    return html.Div(f"❌ 未找到记录 {record_id}", style={"color": "#d63031", "fontWeight": "600"})
+        return html.Div(f"✅ 记录 {record_id} 的备注已保存！", style={"color": "#00b894", "fontWeight": "600"}), (data_version or 0) + 1
+    return html.Div(f"❌ 未找到记录 {record_id}", style={"color": "#d63031", "fontWeight": "600"}), no_update
 
 
 @app.callback(
     [
         Output("review-feedback", "children"),
-        Output("note-record-id", "options", allow_duplicate=True),
+        Output("data-version", "data", allow_duplicate=True),
     ],
     [
         Input("btn-approve", "n_clicks"),
         Input("btn-reject", "n_clicks"),
     ],
-    State("review-record-id", "value"),
+    [
+        State("review-record-id", "value"),
+        State("data-version", "data"),
+    ],
     prevent_initial_call=True,
 )
-def review_record(approve_clicks, reject_clicks, record_id):
+def review_record(approve_clicks, reject_clicks, record_id, data_version):
     ctx = callback_context
     if not ctx.triggered:
-        return "", []
+        return "", no_update
     button_id = ctx.triggered[0]["prop_id"].split(".")[0]
     if not record_id:
-        return html.Div("❌ 请选择待复核记录", style={"color": "#d63031", "fontWeight": "600"}), []
+        return html.Div("❌ 请选择待复核记录", style={"color": "#d63031", "fontWeight": "600"}), no_update
+
+    new_version = (data_version or 0) + 1
 
     if button_id == "btn-approve":
         update_record_status(record_id, "已复核")
-        df = load_all_records()
-        pending = df[df["复核状态"] == "待复核"] if not df.empty else pd.DataFrame()
-        options = [{"label": r.get("记录ID", ""), "value": r.get("记录ID", "")} for _, r in pending.iterrows()] if not pending.empty else []
-        return html.Div(f"✅ 记录 {record_id} 已复核通过", style={"color": "#00b894", "fontWeight": "600"}), options
+        return html.Div(f"✅ 记录 {record_id} 已复核通过", style={"color": "#00b894", "fontWeight": "600"}), new_version
     elif button_id == "btn-reject":
         update_record_status(record_id, "已驳回")
-        df = load_all_records()
-        pending = df[df["复核状态"] == "待复核"] if not df.empty else pd.DataFrame()
-        options = [{"label": r.get("记录ID", ""), "value": r.get("记录ID", "")} for _, r in pending.iterrows()] if not pending.empty else []
-        return html.Div(f"❌ 记录 {record_id} 已驳回", style={"color": "#d63031", "fontWeight": "600"}), options
-    return "", []
+        return html.Div(f"❌ 记录 {record_id} 已驳回", style={"color": "#d63031", "fontWeight": "600"}), new_version
+    return "", no_update
+
+
+@app.callback(
+    [
+        Output("records-table", "data", allow_duplicate=True),
+        Output("note-record-id", "options", allow_duplicate=True),
+    ],
+    Input("data-version", "data"),
+    prevent_initial_call=True,
+)
+def refresh_executor_data(data_version):
+    table_data, options = _build_executor_table_data()
+    return table_data, options
+
+
+@app.callback(
+    [
+        Output("pending-table", "data", allow_duplicate=True),
+        Output("review-record-id", "options", allow_duplicate=True),
+        Output("approved-table", "data", allow_duplicate=True),
+    ],
+    Input("data-version", "data"),
+    prevent_initial_call=True,
+)
+def refresh_reviewer_data(data_version):
+    pending_data, pending_options, approved_data = _build_reviewer_table_data()
+    return pending_data, pending_options, approved_data
 
 
 @app.callback(
@@ -812,13 +881,20 @@ def toggle_scheduler(start_clicks, stop_clicks, thresholds, is_running):
 
 
 @app.callback(
-    Output("upload-feedback", "children"),
+    [
+        Output("upload-feedback", "children"),
+        Output("data-version", "data", allow_duplicate=True),
+    ],
     Input("upload-csv", "contents"),
-    State("upload-csv", "filename"),
+    [
+        State("upload-csv", "filename"),
+        State("data-version", "data"),
+    ],
+    prevent_initial_call=True,
 )
-def handle_upload(contents, filenames):
+def handle_upload(contents, filenames, data_version):
     if not contents:
-        return ""
+        return "", no_update
     import base64
     from io import StringIO
 
@@ -831,6 +907,7 @@ def handle_upload(contents, filenames):
     csv_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "csv_input")
     os.makedirs(csv_dir, exist_ok=True)
 
+    has_success = False
     for content, filename in zip(contents, filenames):
         if not filename.endswith(".csv"):
             results.append(html.Div(f"❌ {filename} 不是CSV文件，已跳过", style={"color": "#d63031"}))
@@ -842,10 +919,12 @@ def handle_upload(contents, filenames):
             dest = os.path.join(csv_dir, filename)
             df.to_csv(dest, index=False, encoding="utf-8-sig")
             results.append(html.Div(f"✅ {filename} 上传成功（{len(df)}条记录）", style={"color": "#00b894"}))
+            has_success = True
         except Exception as e:
             results.append(html.Div(f"❌ {filename} 解析失败：{str(e)}", style={"color": "#d63031"}))
 
-    return html.Div(results)
+    new_version = (data_version or 0) + 1 if has_success else no_update
+    return html.Div(results), new_version
 
 
 @app.callback(
